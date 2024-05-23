@@ -181,6 +181,25 @@ lazy val `kyo-stats-registry` =
         )
         .jsSettings(`js-settings`)
 
+lazy val `kyo-stats-sampler` =
+    crossProject(JSPlatform, JVMPlatform)
+        .withoutSuffixFor(JVMPlatform)
+        .crossType(CrossType.Full)
+        .dependsOn(`kyo-stats-registry`)
+        .in(file("kyo-stats-sampler"))
+        .settings(
+            `kyo-settings`,
+            scalacOptions --= Seq(
+                "-Wvalue-discard",
+                "-Wunused:all",
+                "-language:strictEquality"
+            ),
+            scalacOptions += "-Xsource:3",
+            libraryDependencies += "org.scalatest" %%% "scalatest" % "3.2.16" % Test,
+            crossScalaVersions                      := List(scala3Version, scala212Version, scala213Version)
+        )
+        .jsSettings(`js-settings`)
+
 lazy val `kyo-stats-otel` =
     crossProject(JVMPlatform)
         .withoutSuffixFor(JVMPlatform)
