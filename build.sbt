@@ -73,6 +73,7 @@ lazy val kyo =
             `kyo-cache`,
             `kyo-sttp`,
             `kyo-tapir`,
+            `kyo-llm`,
             `kyo-bench`,
             `kyo-test`,
             `kyo-zio`,
@@ -271,6 +272,24 @@ lazy val `kyo-zio` =
             `js-settings`
         )
 
+lazy val `kyo-llm` =
+    crossProject(JSPlatform, JVMPlatform)
+        .withoutSuffixFor(JVMPlatform)
+        .crossType(CrossType.Full)
+        .in(file("kyo-llm"))
+        .dependsOn(`kyo-sttp`)
+        .dependsOn(`kyo-direct`)
+        .dependsOn(`kyo-core` % "test->test;compile->compile")
+        .settings(
+            `kyo-settings`,
+            libraryDependencies += "com.knuddels"                   % "jtokkit"         % "1.0.0",
+            libraryDependencies += "com.softwaremill.sttp.client3" %% "zio-json"        % "3.9.5",
+            libraryDependencies += "dev.zio"                       %% "zio-schema"      % "1.0.1",
+            libraryDependencies += "dev.zio"                       %% "zio-schema-json" % "1.0.1",
+            libraryDependencies += "dev.zio" %% "zio-schema-derivation" % "1.0.1"
+        )
+        .jsSettings(`js-settings`)
+
 lazy val `kyo-examples` =
     crossProject(JVMPlatform)
         .withoutSuffixFor(JVMPlatform)
@@ -368,7 +387,9 @@ lazy val readme =
             `kyo-sttp`,
             `kyo-tapir`,
             `kyo-bench`,
-            `kyo-zio`
+            `kyo-zio`,
+            `kyo-llm`,
+            `kyo-bench`
         )
 
 import org.scalajs.jsenv.nodejs.*
