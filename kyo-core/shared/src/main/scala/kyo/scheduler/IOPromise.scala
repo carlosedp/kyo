@@ -52,6 +52,9 @@ private[kyo] class IOPromise[T](state: State[T])
         loop(this)
     end interrupt
 
+    def ensure(f: () => Unit): Unit =
+        onComplete(_ => f())
+
     private def compress(): IOPromise[T] =
         @tailrec def loop(p: IOPromise[T]): IOPromise[T] =
             p.get() match

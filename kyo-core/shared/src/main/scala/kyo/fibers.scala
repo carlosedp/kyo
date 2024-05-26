@@ -22,13 +22,18 @@ sealed abstract class Fiber[+T]:
     def onComplete(f: T < IOs => Unit < IOs): Unit < IOs
     def block(timeout: Duration): T < IOs
     def interrupt: Boolean < IOs
+    final def interruptAwait: Boolean < Fibers =
+        interruptAwaitFiber.map(_.get)
+    def interruptAwaitFiber: Fiber[Boolean] < IOs
     def toFuture: Future[T] < IOs
     def transform[U: Flat](t: T => Fiber[U] < IOs): Fiber[U] < IOs
 end Fiber
 
 object Fiber:
 
-    val unit: Fiber[Unit] = value(())
+    val Unit: Fiber[Unit]     = value(())
+    val True: Fiber[Boolean]  = value(true)
+    val False: Fiber[Boolean] = value(false)
 
     def value[T: Flat](v: T): Fiber[T] =
         Done(v)
@@ -75,6 +80,19 @@ case class Promise[T] private (private val p: IOPromise[T]) extends Fiber[T]:
 
     def interrupt =
         IOs(p.interrupt())
+
+    def interruptAwaitFiber =
+        IOs {
+            if p.interrupt() then
+                val state =
+                    new IOPromise[Boolean] with (() => Unit):
+                        def apply() =
+                            discard(this.complete(true))
+                p.ensure(state)
+                new Promise(state)
+            else
+                Fiber.False
+        }
 
     def toFuture =
         IOs {
@@ -308,6 +326,7 @@ object fibersInternal:
         def onComplete(f: T < IOs => Unit < IOs) = f(result)
         def block(timeout: Duration)             = result
         def interrupt                            = false
+        def interruptAwaitFiber                  = Fiber.False
 
         def toFuture = Future.fromTry(Try(IOs.run(result)))
 

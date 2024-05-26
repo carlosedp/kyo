@@ -1,6 +1,7 @@
 package kyoTest
 
 import java.io.Closeable
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger as JAtomicInteger
 import kyo.*
 import org.scalatest.compatible.Assertion
@@ -202,6 +203,25 @@ class fibersTest extends KyoTest:
                 interrupted3 <- fiber3.interrupt
                 _            <- done.await
             yield assert(interrupted1 && interrupted2 && interrupted3)
+        }
+        "await" in runJVM {
+            for
+                started <- Latches.init(1)
+                done    <- Latches.init(1)
+                interrupting = new CountDownLatch(1)
+                fiber <- Fibers.init(IOs.ensure(interrupting.await)(runLoop(started, done)))
+                _     <- started.await
+                _ = println(1)
+                awaitFiber <- fiber.interruptAwaitFiber
+                _ = println(2)
+                _ <- done.await
+                _ = println(3)
+                done1 <- awaitFiber.get
+                _ = println(4)
+                _ = interrupting.countDown()
+                _ = println(5)
+                done2 <- awaitFiber.get
+            yield assert(!done1 && done2)
         }
     }
 

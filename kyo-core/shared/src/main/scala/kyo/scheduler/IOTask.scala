@@ -72,7 +72,8 @@ private[kyo] class IOTask[T](
                         IOs(bug.failTag(kyo.tag, Tag[FiberGets], Tag[IOs]))
                 case _ =>
                     complete(curr.asInstanceOf[T < IOs])
-                    finalize()
+                    ensures.finalize()
+                    ensures = Ensures.empty
                     nullIO
         end if
     end eval
@@ -82,6 +83,8 @@ private[kyo] class IOTask[T](
         try
             curr = eval(curr, scheduler, startMillis, clock)
         catch
+            case ex: InterruptedException =>
+                complete(Fibers.interrupted)
             case ex if (NonFatal(ex)) =>
                 complete(IOs.fail(ex))
                 curr = nullIO
@@ -93,9 +96,11 @@ private[kyo] class IOTask[T](
         end if
     end run
 
-    def ensure(f: () => Unit): Unit =
+    override def ensure(f: () => Unit): Unit =
         if !isNull(curr) then
             ensures = ensures.add(f)
+        else
+            f()
 
     def remove(f: () => Unit): Unit =
         ensures = ensures.remove(f)

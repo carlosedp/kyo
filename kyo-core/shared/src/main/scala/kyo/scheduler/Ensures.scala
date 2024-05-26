@@ -29,7 +29,8 @@ private[kyo] object Ensures:
                     b.add(f)
                     b
                 case arr: ArrayDeque[() => Unit] @unchecked =>
-                    arr.add(f)
+                    if !arr.contains(f) then
+                        discard(arr.add(f))
                     arr
 
         def remove(f: () => Unit): Ensures =
