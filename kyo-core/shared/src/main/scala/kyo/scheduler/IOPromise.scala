@@ -24,6 +24,19 @@ private[kyo] class IOPromise[T](state: State[T])
         loop(this)
     end isDone
 
+    // def pause(: IOPromise[IOPromise[T]]): Boolean =
+    //     @tailrec def loop(promise: IOPromise[T]): Boolean =
+    //         promise.get() match
+    //             case p: Pending[T] @unchecked =>
+    //                 if !promise.compareAndSet(p, p.pause(f)) then
+    //                     loop(promise)
+    //             case l: Linked[T] @unchecked =>
+    //                 loop(l.p)
+    //             case _ =>
+    //                 false
+    //     loop(this)
+    // end pause
+
     final def interrupts(i: IOPromise[?]): Unit =
         @tailrec def loop(promise: IOPromise[T]): Unit =
             promise.get() match
@@ -40,7 +53,7 @@ private[kyo] class IOPromise[T](state: State[T])
         loop(this)
     end interrupts
 
-    final def interrupt(): Boolean =
+    def interrupt(): Boolean =
         @tailrec def loop(promise: IOPromise[T]): Boolean =
             promise.get() match
                 case p: Pending[T] @unchecked =>
@@ -164,9 +177,10 @@ end IOPromise
 
 private[kyo] object IOPromise:
 
-    type State[T] = (T < IOs) | Pending[T] | Linked[T]
+    type State[T] = (T < IOs) | Pending[T] | Linked[T] | Pausing[T]
 
     case class Linked[T](p: IOPromise[T])
+    case class Pausing[T](p: IOPromise[IOPromise[T]])
 
     abstract class Pending[T]:
         self =>
@@ -181,6 +195,13 @@ private[kyo] object IOPromise:
                         case ex if NonFatal(ex) =>
                             Logs.unsafe.error("uncaught exception", ex)
                     end try
+                    self
+                end run
+
+        final def pause(f: IOPromise[T] => Unit): Pending[T] =
+            new Pending[T]:
+                def run(v: T < IOs) =
+                    p.pause(f)
                     self
                 end run
 
