@@ -1,6 +1,5 @@
 package kyo2
 
-import scala.annotation.switch
 import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.quoted.*
@@ -41,62 +40,71 @@ object Tag:
         // Sub-type check //
         ////////////////////
 
-        opaque type Position = Long
-
-        object Position:
-            def apply(subIdx: Int, superIdx: Int): Position =
-                (subIdx.toLong << 32) | superIdx.toLong
-
-            extension (pos: Position)
-                def subIdx: Int   = (pos >> 32).toInt
-                def superIdx: Int = pos.toInt
-        end Position
-
         def isSubtype(subTag: String, superTag: String): Boolean =
-            checkType(subTag, superTag, 0, 0, false) >= 0
+            checkType(subTag, superTag, 0, 0, false).isValid
 
-        def checkType(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Int =
+        def checkType(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Position =
             val subKind   = subTag.charAt(subIdx)
             val superKind = superTag.charAt(superIdx)
             if subKind == 'u' then
-                checkMultiple(subTag, superTag, subIdx + 1, superIdx, checkType(_, _, _, _, equality))
+                if superKind == 'u' then
+                    checkForall(subTag, superTag, subIdx + 1, superIdx) { (s1, s2, i1, i2) =>
+                        checkExists(s2, s1, i2, i1)(checkType(_, _, _, _, equality))
+                    }
+                else
+                    checkForall(subTag, superTag, subIdx + 1, superIdx)(checkType(_, _, _, _, equality))
             else if superKind == 'i' then
-                checkMultiple(superTag, subTag, superIdx + 1, subIdx, checkType(_, _, _, _, equality))
+                checkForall(superTag, subTag, superIdx + 1, subIdx)(checkType(_, _, _, _, equality))
             else if subKind == 'i' then
-                checkMultiple(
-                    subTag,
-                    superTag,
-                    subIdx + 1,
-                    superIdx,
-                    (s1, s2, i1, i2) => if checkType(s1, s2, i1, i2, equality) >= 0 then i1 else -1
-                )
+                checkForall(subTag, superTag, subIdx + 1, superIdx)(checkType(_, _, _, _, equality))
             else if subKind == 't' && superKind == 't' then
                 checkSingle(subTag, superTag, subIdx + 1, superIdx + 1, equality)
-            else -1
+            else
+                Position.invalid(subIdx, superIdx)
             end if
         end checkType
 
-        def checkMultiple(subTag: String, superTag: String, subIdx: Int, superIdx: Int, checkFn: (String, String, Int, Int) => Int): Int =
+        def checkForall(subTag: String, superTag: String, subIdx: Int, superIdx: Int)(
+            checkFn: (String, String, Int, Int) => Position
+        ): Position =
             val subSize = decodeInt(subTag.charAt(subIdx))
-            @tailrec def loop(i: Int, idx: Int): Int =
+            @tailrec def loop(i: Int, pos: Position): Position =
                 if i < subSize then
-                    val nextIdx = checkFn(subTag, superTag, idx, superIdx)
-                    if nextIdx >= 0 then loop(i + 1, nextIdx)
-                    else -1
-                else idx
-            loop(0, subIdx + 1)
-        end checkMultiple
+                    val nextPos = checkFn(subTag, superTag, pos.subIdx, superIdx)
+                    if nextPos.isValid then
+                        loop(i + 1, nextPos)
+                    else
+                        nextPos
+                    end if
+                else pos
+            loop(0, Position(subIdx + 1, superIdx))
+        end checkForall
 
-        def checkSingle(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Int =
+        def checkExists(subTag: String, superTag: String, subIdx: Int, superIdx: Int)(
+            checkFn: (String, String, Int, Int) => Position
+        ): Position =
+            val subSize = decodeInt(subTag.charAt(subIdx))
+            @tailrec def loop(i: Int, pos: Position, found: Boolean): Position =
+                if i < subSize then
+                    val nextPos = checkFn(subTag, superTag, pos.subIdx, superIdx)
+                    loop(i + 1, nextPos.valid, found | nextPos.isValid)
+                else if !found then
+                    pos.invalid
+                else
+                    pos
+            loop(0, Position(subIdx + 1, superIdx), false)
+        end checkExists
+
+        def checkSingle(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Position =
             val subTotalBasesSize   = decodeInt(subTag.charAt(subIdx))
             val subParamsSize       = decodeInt(subTag.charAt(subIdx + 1))
             val superTotalBasesSize = decodeInt(superTag.charAt(superIdx))
             val superParamsSize     = decodeInt(superTag.charAt(superIdx + 1))
             val subBasesEnd         = subIdx + subTotalBasesSize + 2
             val superBasesEnd       = superIdx + superTotalBasesSize + 2
-            @tailrec def checkBases(subIdx: Int, superIdx: Int): Int =
+            @tailrec def checkBases(subIdx: Int, superIdx: Int): Position =
                 if subIdx >= subBasesEnd then
-                    -1
+                    Position.invalid(subIdx, superIdx)
                 else
                     val subHash   = subTag.charAt(subIdx)
                     val subSize   = decodeInt(subTag.charAt(subIdx + 1))
@@ -106,7 +114,7 @@ object Tag:
                     else if !equality then
                         checkBases(subIdx + subSize + 2, superIdx)
                     else
-                        -1
+                        Position.invalid(subIdx, superIdx)
                     end if
             checkBases(subIdx + 2, superIdx + 2)
         end checkSingle
@@ -119,24 +127,44 @@ object Tag:
             subParamsSize: Int,
             superParamsSize: Int,
             equality: Boolean
-        ): Int =
-            @tailrec def loop(i: Int, j: Int, idx1: Int, idx2: Int): Int =
+        ): Position =
+            @tailrec def loop(i: Int, j: Int, pos: Position): Position =
                 if i >= subParamsSize || j >= superParamsSize then
-                    if i >= subParamsSize && j >= superParamsSize then idx1 else -1
+                    if i >= subParamsSize && j >= superParamsSize then pos else Position.invalid(i, j)
                 else
+                    val idx1 = pos.subIdx
+                    val idx2 = pos.superIdx
                     subTag.charAt(idx1) match
                         case '+' =>
-                            val nextIdx = checkType(subTag, superTag, idx1 + 1, idx2 + 1, equality)
-                            if nextIdx >= 0 then loop(i + 1, j + 1, nextIdx, nextIdx) else -1
+                            val nextPos = checkType(subTag, superTag, idx1 + 1, idx2 + 1, equality)
+                            if nextPos.isValid then loop(i + 1, j + 1, nextPos) else nextPos
                         case '=' =>
-                            val nextIdx = checkType(subTag, superTag, idx1 + 1, idx2 + 1, true)
-                            if nextIdx >= 0 then loop(i + 1, j + 1, nextIdx, nextIdx) else -1
+                            val nextPos = checkType(subTag, superTag, idx1 + 1, idx2 + 1, true)
+                            if nextPos.isValid then loop(i + 1, j + 1, nextPos) else nextPos
                         case '-' =>
-                            val nextIdx = checkType(superTag, subTag, idx2 + 1, idx1 + 1, equality)
-                            if nextIdx >= 0 then loop(i + 1, j + 1, nextIdx, nextIdx) else -1
+                            val nextPos = checkType(superTag, subTag, idx2 + 1, idx1 + 1, equality)
+                            if nextPos.isValid then loop(i + 1, j + 1, Position(nextPos.superIdx, nextPos.subIdx)) else nextPos
                     end match
-            loop(0, 0, subIdx, superIdx)
+            loop(0, 0, Position(subIdx, superIdx))
         end checkParams
+
+        opaque type Position = Long
+
+        object Position:
+            def apply(subIdx: Int, superIdx: Int, isValid: Boolean = true): Position =
+                val validBit = if isValid then 0L else 1L
+                (validBit << 63) | (subIdx.toLong << 32) | superIdx.toLong
+            def invalid(subIdx: Int, superIdx: Int): Position =
+                Position(subIdx, superIdx, false)
+        end Position
+
+        extension (pos: Position)
+            def subIdx: Int       = ((pos >> 32) & 0x7fffffff).toInt
+            def superIdx: Int     = (pos & 0xffffffff).toInt
+            def isValid: Boolean  = (pos >>> 63) == 0L
+            def invalid: Position = Position(subIdx, superIdx, false)
+            def valid: Position   = Position(subIdx, superIdx, true)
+        end extension
 
         ///////////////////
         // Macro methods //
