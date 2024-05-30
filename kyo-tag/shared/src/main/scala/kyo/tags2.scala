@@ -46,31 +46,67 @@ object Tag:
         def checkType(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Position =
             val subKind   = subTag.charAt(subIdx)
             val superKind = superTag.charAt(superIdx)
+
             if subKind == 'u' then
                 if superKind == 'u' then
-                    checkForall(subTag, superTag, subIdx + 1, superIdx) { (s1, s2, i1, i2) =>
-                        checkExists(s2, s1, i2, i1)(checkType(_, _, _, _, equality))
-                    }
+                    checkUnion(subTag, superTag, subIdx + 1, superIdx + 1)
                 else
-                    checkForall(subTag, superTag, subIdx + 1, superIdx)(checkType(_, _, _, _, equality))
-            else if superKind == 'i' then
-                checkForall(superTag, subTag, superIdx + 1, subIdx)(checkType(_, _, _, _, equality))
+                    checkExists(subTag, superTag, subIdx + 1, superIdx, equality)
+            else if superKind == 'u' then
+                checkExists(superTag, subTag, superIdx + 1, subIdx, equality)
+            else if subKind == 'i' && superKind == 'i' then
+                // checkIntersection(subTag, superTag, subIdx + 1, superIdx + 1, equality)
+                ???
             else if subKind == 'i' then
-                checkForall(subTag, superTag, subIdx + 1, superIdx)(checkType(_, _, _, _, equality))
-            else if subKind == 't' && superKind == 't' then
-                checkSingle(subTag, superTag, subIdx + 1, superIdx + 1, equality)
+                // checkExistsIntersection(subTag, superTag, subIdx + 1, superIdx, equality)
+                ???
+            else if superKind == 'i' then
+                // checkForallIntersection(subTag, superTag, subIdx, superIdx + 1, equality)
+                ???
             else
-                Position.invalid(subIdx, superIdx)
+                checkSingle(subTag, superTag, subIdx + 1, superIdx + 1, equality)
             end if
         end checkType
 
-        def checkForall(subTag: String, superTag: String, subIdx: Int, superIdx: Int)(
-            checkFn: (String, String, Int, Int) => Position
-        ): Position =
+        def checkUnion(subTag: String, superTag: String, subIdx: Int, superIdx: Int): Position =
+            val subSize   = decodeInt(subTag.charAt(subIdx))
+            val superSize = decodeInt(superTag.charAt(superIdx))
+
+            @tailrec def loop(i: Int, subIdx: Int, superIdx: Int, found: Boolean): Position =
+                if i < subSize then
+                    @tailrec def innerLoop(j: Int, superIdx: Int, found: Boolean): Position =
+                        if j < superSize then
+                            val nextPos = checkType(subTag, superTag, subIdx, superIdx, false)
+                            if nextPos.isValid then innerLoop(j + 1, nextPos.superIdx, true)
+                            else innerLoop(j + 1, superIdx, found)
+                        else if found then Position(subIdx + decodeInt(subTag.charAt(subIdx + 1)) + 2, superIdx)
+                        else Position.invalid(subIdx, superIdx)
+
+                    val nextPos = innerLoop(0, superIdx + 1, false)
+                    if nextPos.isValid then loop(i + 1, nextPos.subIdx, superIdx + 1, found || nextPos.isValid)
+                    else Position.invalid(subIdx, superIdx)
+                else if found then Position(subIdx, superIdx)
+                else Position.invalid(subIdx, superIdx)
+
+            loop(0, subIdx + 1, superIdx + 1, false)
+        end checkUnion
+
+        def checkExists(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Position =
+            val subSize = decodeInt(subTag.charAt(subIdx))
+            @tailrec def loop(i: Int, subIdx: Int, superIdx: Int, found: Boolean): Position =
+                if i < subSize then
+                    val nextPos = checkType(subTag, superTag, subIdx, superIdx, equality)
+                    loop(i + 1, nextPos.subIdx, superIdx, found || nextPos.isValid)
+                else if found then Position(subIdx, superIdx)
+                else Position.invalid(subIdx, superIdx)
+            loop(0, subIdx + 1, superIdx, false)
+        end checkExists
+
+        def checkForall(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Position =
             val subSize = decodeInt(subTag.charAt(subIdx))
             @tailrec def loop(i: Int, pos: Position): Position =
                 if i < subSize then
-                    val nextPos = checkFn(subTag, superTag, pos.subIdx, superIdx)
+                    val nextPos = checkType(subTag, superTag, pos.subIdx, superIdx, equality)
                     if nextPos.isValid then
                         loop(i + 1, nextPos)
                     else
@@ -79,21 +115,6 @@ object Tag:
                 else pos
             loop(0, Position(subIdx + 1, superIdx))
         end checkForall
-
-        def checkExists(subTag: String, superTag: String, subIdx: Int, superIdx: Int)(
-            checkFn: (String, String, Int, Int) => Position
-        ): Position =
-            val subSize = decodeInt(subTag.charAt(subIdx))
-            @tailrec def loop(i: Int, pos: Position, found: Boolean): Position =
-                if i < subSize then
-                    val nextPos = checkFn(subTag, superTag, pos.subIdx, superIdx)
-                    loop(i + 1, nextPos.valid, found | nextPos.isValid)
-                else if !found then
-                    pos.invalid
-                else
-                    pos
-            loop(0, Position(subIdx + 1, superIdx), false)
-        end checkExists
 
         def checkSingle(subTag: String, superTag: String, subIdx: Int, superIdx: Int, equality: Boolean): Position =
             val subTotalBasesSize   = decodeInt(subTag.charAt(subIdx))
@@ -164,6 +185,7 @@ object Tag:
             def isValid: Boolean  = (pos >>> 63) == 0L
             def invalid: Position = Position(subIdx, superIdx, false)
             def valid: Position   = Position(subIdx, superIdx, true)
+            def swap: Position    = Position(superIdx, subIdx)
         end extension
 
         ///////////////////

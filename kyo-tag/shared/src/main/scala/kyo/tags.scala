@@ -34,10 +34,21 @@ object Tag:
             t1 match
                 case t1: String =>
                     t2 match
-                        case t2: String => isSubtype(t1, t2)
-                        case t2: Set[?] => t2 >:> t1
-                case t1: Set[T] =>
-                    t1 <:< t2
+                        case t2: String          => isSubtype(t1, t2)
+                        case t2: Union[?]        => t2.tags.exists(t1 <:< _)
+                        case t2: Intersection[?] => t2.tags.forall(_ <:< t1)
+                case t1: Union[?] =>
+                    t2 match
+                        case t2: Union[?] =>
+                            t1.tags.forall(tag1 => t2.tags.exists(tag1 <:< _))
+                        case _ =>
+                            t1.tags.forall(_ <:< t2)
+                case t1: Intersection[?] =>
+                    t2 match
+                        case t2: Intersection[?] =>
+                            t2.tags.forall(tag2 => t1.tags.exists(_ <:< tag2))
+                        case _ =>
+                            t1.tags.exists(_ <:< t2)
 
         infix def =:=[U](t2: Full[U]): Boolean =
             (t1.asInstanceOf[AnyRef] eq t2.asInstanceOf[AnyRef]) || t1 == t2
@@ -54,7 +65,6 @@ object Tag:
 
     sealed trait Set[T] extends Any:
         def show: String
-        infix def <:<[U](t2: Full[U]): Boolean
         infix def =:=[U](t2: Full[U]): Boolean
         infix def =!=[U](t2: Full[U]): Boolean =
             !(this =:= t2)
@@ -68,13 +78,6 @@ object Tag:
     case class Union[T](tags: Seq[Tag[Any]]) extends AnyVal with Set[T]:
         def show: String =
             tags.map(_.show).mkString(" | ")
-
-        infix def <:<[U](t2: Full[U]): Boolean =
-            t2 match
-                case t2: Union[?] =>
-                    tags.forall(tag1 => t2.tags.exists(tag1 <:< _))
-                case _ =>
-                    tags.forall(_ <:< t2)
 
         infix def >:>[U](t2: Full[U]): Boolean =
             t2 match

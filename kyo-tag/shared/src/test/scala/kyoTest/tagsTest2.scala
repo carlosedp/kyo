@@ -8,6 +8,13 @@ import scala.annotation.nowarn
 
 class tagsTest extends AsyncFreeSpec with NonImplicitAssertions:
 
+    "union supertype" - {
+        class A
+        class B extends A
+        class C
+        test[B, A | C]
+    }
+
     inline def test[T1, T2](using k1: Tag[T1], i1: ITag[T1], k2: Tag[T2], i2: ITag[T2]): Unit =
         "T1 <:< T2" in {
             val kresult = k1 <:< k2
@@ -44,11 +51,10 @@ class tagsTest extends AsyncFreeSpec with NonImplicitAssertions:
         ()
     end test
 
-    "union subtype" - {
+    "union of two unrelated types" - {
         class A
-        class B extends A
-        class C extends A
-        test[B | C, A]
+        class B
+        test[A | B, AnyRef]
     }
 
     "without variance" - {
